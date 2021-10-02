@@ -1,38 +1,58 @@
-vignette
+Interacting with Polygon Financial Data API
 ================
 David Shaw
 10/1/2021
 
--   [0.1 R Markdown](#r-markdown)
--   [0.2 Including Plots](#including-plots)
+-   [1 Requirements](#requirements)
+-   [2 API Interactions](#api-interactions)
+    -   [2.1 Stocker Ticker values](#stocker-ticker-values)
+-   [3 Exploratory](#exploratory)
+-   [4 Conclusion](#conclusion)
 
-## 0.1 R Markdown
+# 1 Requirements
 
-This is an R Markdown document. Markdown is a simple formatting syntax
-for authoring HTML, PDF, and MS Word documents. For more details on
-using R Markdown see <http://rmarkdown.rstudio.com>.
+The following packages must be installed using
+`install.packages('packageName')` and imported into environment using
+`library(packageName)` + [tidyverse](https://www.tidyverse.org/) +
+[httr](https://cran.r-project.org/web/packages/httr/vignettes/quickstart.html)
++
+[jsonlite](https://cran.r-project.org/web/packages/jsonlite/vignettes/json-aaquickstart.html)
 
-When you click the **Knit** button a document will be generated that
-includes both content as well as the output of any embedded R code
-chunks within the document. You can embed an R code chunk like this:
+Accessing the API + Retrieve API token at
+<https://polygon.io/docs/getting-started>
+
+# 2 API Interactions
+
+First, place your api token in a global variable called API_TOKEN
 
 ``` r
-summary(cars)
+API_TOKEN='qpnTdSpewzcPBpPm_jUHtmhe_peuQsi6'
 ```
 
-    ##      speed           dist       
-    ##  Min.   : 4.0   Min.   :  2.00  
-    ##  1st Qu.:12.0   1st Qu.: 26.00  
-    ##  Median :15.0   Median : 36.00  
-    ##  Mean   :15.4   Mean   : 42.98  
-    ##  3rd Qu.:19.0   3rd Qu.: 56.00  
-    ##  Max.   :25.0   Max.   :120.00
+## 2.1 Stocker Ticker values
 
-## 0.2 Including Plots
+Parameters: + `stocksTicker`: ticker symbol of stock + `timespan`: time
+between measurements (minute, hour, day, week, month, quarter, year) +
+`from`: date to collect market prices from in format YYYY-mm-dd + `to`:
+date to collect market prices to in format YYYY-mm-dd
 
-You can also embed plots, for example:
+    ```r
+    stockPrices <- function(stocksTicker='AAPL', timespan='day', from='2021-01-01', to='2021-01-14') {
+      # build url
+      url = paste('https://api.polygon.io/v2/aggs/ticker/', stocksTicker, '/range/1/', timespan, '/', from, '/', to,
+                    '/?adjusted=true&sort=asc&apiKey=', API_TOKEN, sep = '')
+      
+      # make api call and convert to dataframe
+      raw <- GET(url)
+      parsed <- fromJSON(rawToChar(raw$content))
+      parsed$results
+    }
+    ```
 
-![](index_files/figure-gfm/pressure-1.png)<!-- -->
+# 3 Exploratory
 
-Note that the `echo = FALSE` parameter was added to the code chunk to
-prevent printing of the R code that generated the plot.
+placeholder
+
+# 4 Conclusion
+
+placeholder
