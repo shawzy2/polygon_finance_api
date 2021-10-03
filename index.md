@@ -15,6 +15,8 @@ David Shaw
     -   [2.6
         `stockFinancials(ticker, limit)`](#stockfinancialsticker-limit)
 -   [3 Exploratory Analysis](#exploratory-analysis)
+    -   [3.1 Palantir (PLTR) Analysis](#palantir-pltr-analysis)
+    -   [3.2 FAANG Analysis](#faang-analysis)
 -   [4 Conclusion](#conclusion)
 
 # 1 Requirements
@@ -26,6 +28,7 @@ The following packages must be installed using
 -   [tidyverse](https://www.tidyverse.org/)
 -   [httr](https://cran.r-project.org/web/packages/httr/vignettes/quickstart.html)
 -   [jsonlite](https://cran.r-project.org/web/packages/jsonlite/vignettes/json-aaquickstart.html)
+-   [chron](https://cran.r-project.org/web/packages/chron/chron.pdf)
 
 Accessing the API
 
@@ -247,7 +250,144 @@ stockFinancials <- function(ticker = 'AAPL', limit = 5) {
 
 # 3 Exploratory Analysis
 
-placeholder
+## 3.1 Palantir (PLTR) Analysis
+
+Let us start by pulling year-to-date data on the ticker PLTR. Market
+holidays retrieved from
+[here](https://www.nyse.com/markets/hours-calendars).
+
+``` r
+ticker <- 'PLTR'
+timespan <- 'day'
+from <- '2021-01-01'
+to <- '2021-10-01'
+pltr <- tickerPrices(ticker=ticker, timespan=timespan, from=from, to=to)
+head(pltr)
+```
+
+    ##          v      vw     o     c     h     l            t      n
+    ## 1 45768204 23.5743 23.91 23.37 24.50 22.50 1.609736e+12 250779
+    ## 2 29468743 23.9445 23.18 24.60 24.67 22.89 1.609823e+12 148051
+    ## 3 33243997 23.8755 24.12 23.54 24.46 23.25 1.609909e+12 188973
+    ## 4 32580188 24.5540 24.02 25.00 25.19 23.67 1.609996e+12 149353
+    ## 5 41859607 25.5970 25.70 25.20 26.44 24.70 1.610082e+12 196183
+    ## 6 33009195 25.7829 24.61 25.93 26.60 24.31 1.610341e+12 170895
+
+``` r
+# add a column representing dates to this dataframe
+marketHolidays2021 <- dates(c('2021-01-01', '2021-01-18', '2021-02-15', '2021-04-02', 
+                              '2021-05-31', '2021-07-05', '2021-09-06', '2021-11-25', '2021-12-24'), 
+                                format="Y-M-D")
+marketOpenDates <- seq(as.Date(from), as.Date(to), by="days")
+marketOpenDates <- marketOpenDates[!is.weekend(marketOpenDates)]
+marketOpenDates <- marketOpenDates[!is.holiday(marketOpenDates, marketHolidays2021)]
+pltr <- pltr %>% mutate(date = marketOpenDates)
+
+# plot date vs closing price
+g <- ggplot(pltr, aes(x=date,)) +
+        geom_line(aes(y=c)) +
+        ggtitle('Closing price of PLTR for Year-to-Date') + 
+        theme(plot.title = element_text(hjust = 0.5, size=18, face="bold.italic")) +
+        xlab('Date') + 
+        ylab('Price at Close ($)')
+g
+```
+
+![](index_files/figure-gfm/eda_pltr1-1.png)<!-- -->
+
+We see that PLTR achieved its high in February and has hovered around
+$25 since then.
+
+Now let’s look at how changes in volatility affect closing price. We
+first must create categorical variables to indicate if volatility has
+increased/decreased since the previous trading day. Likewise we will
+create a categorical variable to indicate if closing price has
+increased/decreased since the previous trading day.
+
+``` r
+data <- pltr %>% 
+          select(date, c, v) %>% 
+            mutate(vIncrease = ifelse(v > lag(v), TRUE, FALSE)) %>%
+              mutate(cIncrease = ifelse((c / lag(c)) > 1.05, '5% or more', 
+                                  ifelse((c / lag(c)) > 1.02, '2% to 5%',
+                                  ifelse((c / lag(c)) > 0.98, '-2% to 2%', 
+                                  ifelse((c / lag(c)) > 0.95, '-5% to -2%',
+                                         '-5% or less'))))) %>%
+                mutate(order = ifelse((c / lag(c)) > 1.05, 5, 
+                                    ifelse((c / lag(c)) > 1.02, 4,
+                                    ifelse((c / lag(c)) > 0.98, 3, 
+                                    ifelse((c / lag(c)) > 0.95, 2, 1)))))
+
+table(data$cIncrease, data$vIncrease)
+```
+
+    ##              
+    ##               FALSE TRUE
+    ##   -2% to 2%      53   27
+    ##   -5% or less     4   13
+    ##   -5% to -2%     20   20
+    ##   2% to 5%       14   17
+    ##   5% or more      5   15
+
+Above we see a breakdown of change in closing price based on volitility
+increases (TRUE values) and when volitility decreases (FALSE values).
+There seems to be correlation between volitility increasing and more
+extreme price changes. Let us investigate further by printing out mean
+and standard deviations of each category.
+
+``` r
+data %>% group_by(order) %>% summarise(avg=mean(v), med=median(v), sd=sd(v))
+```
+
+    ## # A tibble: 6 × 4
+    ##   order        avg       med        sd
+    ##   <dbl>      <dbl>     <dbl>     <dbl>
+    ## 1     1 105832390. 89413466  66732996.
+    ## 2     2  59974499. 47977828  39314966.
+    ## 3     3  45910884. 42137120. 27204749.
+    ## 4     4  55680041. 46974997  28897022.
+    ## 5     5 111091749. 86248968. 74432419.
+    ## 6    NA  45768204  45768204        NA
+
+``` r
+df <- data.frame(summaries)
+df$changeInPrice <- c('-5% or less', '-5% to -2%', '-2% to 2%', '2% to 5%', '5% or more', 'NA')
+df <- df %>% select(changeInPrice, avg, med, sd)
+df
+```
+
+    ##   changeInPrice       avg      med       sd
+    ## 1   -5% or less 105832390 89413466 66732996
+    ## 2    -5% to -2%  59974499 47977828 39314966
+    ## 3     -2% to 2%  45910884 42137120 27204749
+    ## 4      2% to 5%  55680041 46974997 28897022
+    ## 5    5% or more 111091749 86248968 74432419
+    ## 6            NA  45768204 45768204       NA
+
+Above we see that for changes in price that exceed 5%, the average
+change in volitility is nearly twice that of price changes less than 5%.
+Additionally, the standard deviation of the mean calculation for changes
+above 5% is much greater than mean calculations of changes below 5% –
+meaning this phenomena could be due to lack of data points for above 5%
+price increases.
+
+## 3.2 FAANG Analysis
+
+FAANG stocks are known as Facebook (FB), Amazon (AMZN), Apple (AAPL),
+Netflix (NFLX), and Google (GOOGL). Let us analyze correlation between
+these stocks.
+
+``` r
+tickers <- c('AAPL', 'AMZN', 'GOOGL', 'FB', 'NFLX')
+tickerPricesWrapper <- function(ticker = '') {
+  timespan <- 'day'
+  from <- '2021-01-01'
+  to <- '2021-01-05'
+  tickerPrices(ticker = ticker, timespan = timespan, from = from, to = to)
+}
+
+prices <- tickerPricesWrapper(ticker = 'AMZN')
+```
 
 # 4 Conclusion
 

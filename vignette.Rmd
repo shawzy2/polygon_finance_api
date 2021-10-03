@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(httr)
 library(jsonlite)
+library(chron)
 API_TOKEN='qpnTdSpewzcPBpPm_jUHtmhe_peuQsi6'
 ```
 
@@ -19,6 +20,7 @@ The following packages must be installed using `install.packages('packageName')`
  * [tidyverse](https://www.tidyverse.org/)
  * [httr](https://cran.r-project.org/web/packages/httr/vignettes/quickstart.html)
  * [jsonlite](https://cran.r-project.org/web/packages/jsonlite/vignettes/json-aaquickstart.html)
+ * [chron](https://cran.r-project.org/web/packages/chron/chron.pdf)
 
 Accessing the API
 
@@ -211,7 +213,84 @@ stockFinancials <- function(ticker = 'AAPL', limit = 5) {
 
 
 # Exploratory Analysis
-placeholder
+
+## Palantir (PLTR) Analysis
+Let us start by pulling year-to-date data on the ticker PLTR.
+Market holidays retrieved from [here](https://www.nyse.com/markets/hours-calendars).
+```{r eda_pltr1}
+ticker <- 'PLTR'
+timespan <- 'day'
+from <- '2021-01-01'
+to <- '2021-10-01'
+pltr <- tickerPrices(ticker=ticker, timespan=timespan, from=from, to=to)
+head(pltr)
+
+# add a column representing dates to this dataframe
+marketHolidays2021 <- dates(c('2021-01-01', '2021-01-18', '2021-02-15', '2021-04-02', 
+                              '2021-05-31', '2021-07-05', '2021-09-06', '2021-11-25', '2021-12-24'), 
+                                format="Y-M-D")
+marketOpenDates <- seq(as.Date(from), as.Date(to), by="days")
+marketOpenDates <- marketOpenDates[!is.weekend(marketOpenDates)]
+marketOpenDates <- marketOpenDates[!is.holiday(marketOpenDates, marketHolidays2021)]
+pltr <- pltr %>% mutate(date = marketOpenDates)
+
+# plot date vs closing price
+g <- ggplot(pltr, aes(x=date,)) +
+        geom_line(aes(y=c)) +
+        ggtitle('Closing price of PLTR for Year-to-Date') + 
+        theme(plot.title = element_text(hjust = 0.5, size=18, face="bold.italic")) +
+        xlab('Date') + 
+        ylab('Price at Close ($)')
+g
+```
+
+We see that PLTR achieved its high in February and has hovered around $25 since then.
+
+Now let's look at how changes in volatility affect closing price. We first must create categorical variables to indicate if volatility has increased/decreased since the previous trading day. Likewise we will create a categorical variable to indicate if closing price has increased/decreased since the previous trading day. 
+```{r eda_pltr2}
+data <- pltr %>% 
+          select(date, c, v) %>% 
+            mutate(vIncrease = ifelse(v > lag(v), TRUE, FALSE)) %>%
+              mutate(cIncrease = ifelse((c / lag(c)) > 1.05, '5% or more', 
+                                  ifelse((c / lag(c)) > 1.02, '2% to 5%',
+                                  ifelse((c / lag(c)) > 0.98, '-2% to 2%', 
+                                  ifelse((c / lag(c)) > 0.95, '-5% to -2%',
+                                         '-5% or less'))))) %>%
+                mutate(order = ifelse((c / lag(c)) > 1.05, 5, 
+                                    ifelse((c / lag(c)) > 1.02, 4,
+                                    ifelse((c / lag(c)) > 0.98, 3, 
+                                    ifelse((c / lag(c)) > 0.95, 2, 1)))))
+
+table(data$cIncrease, data$vIncrease)
+```
+
+Above we see a breakdown of change in closing price based on volitility increases (TRUE values) and when volitility decreases (FALSE values). There seems to be correlation between volitility increasing and more extreme price changes. Let us investigate further by printing out mean and standard deviations of each category.
+
+```{r eda_pltr3}
+data %>% group_by(order) %>% summarise(avg=mean(v), med=median(v), sd=sd(v))
+df <- data.frame(summaries)
+df$changeInPrice <- c('-5% or less', '-5% to -2%', '-2% to 2%', '2% to 5%', '5% or more', 'NA')
+df <- df %>% select(changeInPrice, avg, med, sd)
+df
+```
+
+Above we see that for changes in price that exceed 5%, the average change in volitility is nearly twice that of price changes less than 5%. Additionally, the standard deviation of the mean calculation for changes above 5% is much greater than mean calculations of changes below 5% -- meaning this phenomena could be due to lack of data points for above 5% price increases.
+
+
+## FAANG Analysis
+FAANG stocks are known as Facebook (FB), Amazon (AMZN), Apple (AAPL), Netflix (NFLX), and Google (GOOGL). Let us analyze correlation between these stocks.
+
+```{r eda_faang1}
+tickers <- c('AAPL', 'AMZN', 'GOOGL', 'FB', 'NFLX')
+tickerPricesWrapper <- function(ticker = '') {
+  timespan <- 'day'
+  from <- '2021-01-01'
+  to <- '2021-01-05'
+  tickerPrices(ticker = ticker, timespan = timespan, from = from, to = to)
+}
+
+prices <- tickerPricesWrapper(ticker = 'AMZN')
+```
 
 # Conclusion
 placeholder
