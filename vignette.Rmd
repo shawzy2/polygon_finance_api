@@ -11,6 +11,8 @@ library(tidyverse)
 library(httr)
 library(jsonlite)
 library(chron)
+library(ggplot2)
+library(dplyr)
 API_TOKEN='qpnTdSpewzcPBpPm_jUHtmhe_peuQsi6'
 ```
 
@@ -226,30 +228,34 @@ pltr <- tickerPrices(ticker=ticker, timespan=timespan, from=from, to=to)
 head(pltr)
 
 # add a column representing dates to this dataframe
-marketHolidays2021 <- dates(c('2021-01-01', '2021-01-18', '2021-02-15', '2021-04-02', 
+openDays <- function(from, to) {
+  marketHolidays2021 <- dates(c('2021-01-01', '2021-01-18', '2021-02-15', '2021-04-02', 
                               '2021-05-31', '2021-07-05', '2021-09-06', '2021-11-25', '2021-12-24'), 
                                 format="Y-M-D")
-marketOpenDates <- seq(as.Date(from), as.Date(to), by="days")
-marketOpenDates <- marketOpenDates[!is.weekend(marketOpenDates)]
-marketOpenDates <- marketOpenDates[!is.holiday(marketOpenDates, marketHolidays2021)]
-pltr <- pltr %>% mutate(date = marketOpenDates)
+  marketOpenDates <- seq(as.Date(from), as.Date(to), by="days")
+  marketOpenDates <- marketOpenDates[!is.weekend(marketOpenDates)]
+  marketOpenDates <- marketOpenDates[!is.holiday(marketOpenDates, marketHolidays2021)]
+}
+pltr$date <- openDays(from, to)
 
 # plot date vs closing price
-g <- ggplot(pltr, aes(x=date,)) +
+pltr1 <- ggplot(pltr, aes(x=date,)) +
         geom_line(aes(y=c)) +
         ggtitle('Closing price of PLTR for Year-to-Date') + 
         theme(plot.title = element_text(hjust = 0.5, size=18, face="bold.italic")) +
         xlab('Date') + 
         ylab('Price at Close ($)')
-g
+pltr1
 ```
 
 We see that PLTR achieved its high in February and has hovered around $25 since then.
 
 Now let's look at how changes in volatility affect closing price. We first must create categorical variables to indicate if volatility has increased/decreased since the previous trading day. Likewise we will create a categorical variable to indicate if closing price has increased/decreased since the previous trading day. 
 ```{r eda_pltr2}
+pltr <- tickerPrices(ticker=ticker, timespan=timespan, from=from, to=to)
+
 data <- pltr %>% 
-          select(date, c, v) %>% 
+          select(c, v) %>% 
             mutate(vIncrease = ifelse(v > lag(v), TRUE, FALSE)) %>%
               mutate(cIncrease = ifelse((c / lag(c)) > 1.05, '5% or more', 
                                   ifelse((c / lag(c)) > 1.02, '2% to 5%',
@@ -267,8 +273,7 @@ table(data$cIncrease, data$vIncrease)
 Above we see a breakdown of change in closing price based on volitility increases (TRUE values) and when volitility decreases (FALSE values). There seems to be correlation between volitility increasing and more extreme price changes. Let us investigate further by printing out mean and standard deviations of each category.
 
 ```{r eda_pltr3}
-data %>% group_by(order) %>% summarise(avg=mean(v), med=median(v), sd=sd(v))
-df <- data.frame(summaries)
+df <- data %>% group_by(order) %>% summarise(avg=mean(v), med=median(v), sd=sd(v))
 df$changeInPrice <- c('-5% or less', '-5% to -2%', '-2% to 2%', '2% to 5%', '5% or more', 'NA')
 df <- df %>% select(changeInPrice, avg, med, sd)
 df
@@ -280,17 +285,122 @@ Above we see that for changes in price that exceed 5%, the average change in vol
 ## FAANG Analysis
 FAANG stocks are known as Facebook (FB), Amazon (AMZN), Apple (AAPL), Netflix (NFLX), and Google (GOOGL). Let us analyze correlation between these stocks.
 
+First, we need to retrieve data from API:
 ```{r eda_faang1}
 tickers <- c('AAPL', 'AMZN', 'GOOGL', 'FB', 'NFLX')
 tickerPricesWrapper <- function(ticker = '') {
   timespan <- 'day'
   from <- '2021-01-01'
-  to <- '2021-01-05'
-  tickerPrices(ticker = ticker, timespan = timespan, from = from, to = to)
+  to <- '2021-10-01'
+  prices <- tickerPrices(ticker = ticker, timespan = timespan, from = from, to = to)
+  prices$tick <- ticker
+
+  return(prices)
 }
 
-prices <- tickerPricesWrapper(ticker = 'AMZN')
+prices <- lapply(tickers, tickerPricesWrapper) %>% bind_rows()
+head(prices, 10)
 ```
 
-# Conclusion
-placeholder
+Next we will explore data using a series of plots:
+
+* Bar plot to number/level of change for each ticker
+
+    ```{r eda_faang2}
+    # feature engineering
+    faang <- prices %>% 
+          select(tick, c) %>% 
+            group_by(tick) %>%
+              mutate(cIncrease = ifelse((c / lag(c)) > 1.05, '5% or more', 
+                                  ifelse((c / lag(c)) > 1.02, '2% to 5%',
+                                  ifelse((c / lag(c)) > 0.98, '-2% to 2%', 
+                                  ifelse((c / lag(c)) > 0.95, '-5% to -2%',
+                                         '-5% or less')))))
+
+    # plot days increasing bar plot
+    faangBar <- ggplot(faang, aes(x=tick)) +
+        geom_bar(aes(fill = as.factor(cIncrease)), position = 'dodge') +
+        theme(plot.title = element_text(hjust = 0.5, size=18, face="bold.italic")) +
+        xlab('Date') + 
+        ylab('Number of Days') + 
+        labs(title = 'Level of Change vs Number of Days \n FAANG Stocks between 2021-01-01 and 2021-10-01', 
+             fill = 'Level of Change')
+    faangBar
+    ```
+  
+We see that this group follows a similar distribution for level of change.
+
+* Let's check out how volitility correlates with closing price using a scatter plot:
+
+```{r eda_faang3}
+# feature engineering
+faang2 <- prices %>% 
+          select(tick, c, v) %>% 
+            group_by(tick) %>%
+              mutate(cChange = c/lag(c)-1, vChange = v/lag(v)-1)
+
+# plot days increasing bar plot
+faangPoint <- ggplot(faang2, aes(x=vChange, y=cChange, color=tick)) +
+    geom_point() +
+    theme(plot.title = element_text(hjust = 0.5, size=18, face="bold.italic")) +
+    xlab('Change in Volitility (Factor)') + 
+    ylab('Change in Closing Price (Factor)') + 
+    labs(title = 'Volitility vs Closing Price \n FAANG Stocks between 2021-01-01 and 2021-10-01', 
+         color = 'Stock') + 
+    xlim(-1, 2) + 
+    ylim(-.1, .1)
+faangPoint
+```
+
+No correlation is uncovered between changes in volitility and changes in closing price from the previous day.
+
+
+## Markets Analysis
+
+Let us explore differences between volitility in stock, forex, and crypto markets on October 4th, 2021.
+
+```{r eda_market1}
+marketPricesAllVolWrapper <- function(market = 'stocks') {
+  data <- marketPricesAll(market = market, date = '2021-10-04')
+  data$m <- market
+  return (data)
+}
+
+markets <- c('stocks', 'fx', 'crypto')
+marketVols <- lapply(markets, marketPricesAllVolWrapper) %>% bind_rows()
+
+
+marketBox <- ggplot(data = marketVols, mapping = aes(x = m, y = v, fill = m)) +
+              geom_boxplot(show.legend = FALSE) +
+              coord_cartesian(ylim = c(0, 10000000)) +
+              theme(plot.title = element_text(hjust = 0.5, size=18, face="bold.italic")) +
+                    xlab('Market Type') + 
+                    ylab('Volitility') + 
+                    labs(title = 'Market vs Volitility \n For the October 4th, 2021 Session')
+marketBox
+```
+
+
+It appears that crypto has the largest volume of trades, followed by regular stock, and finally forex.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
