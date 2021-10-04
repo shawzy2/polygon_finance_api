@@ -252,8 +252,10 @@ We see that PLTR achieved its high in February and has hovered around $25 since 
 
 Now let's look at how changes in volatility affect closing price. We first must create categorical variables to indicate if volatility has increased/decreased since the previous trading day. Likewise we will create a categorical variable to indicate if closing price has increased/decreased since the previous trading day. 
 ```{r eda_pltr2}
+# retreive data
 pltr <- tickerPrices(ticker=ticker, timespan=timespan, from=from, to=to)
 
+# feature engineering
 data <- pltr %>% 
           select(c, v) %>% 
             mutate(vIncrease = ifelse(v > lag(v), TRUE, FALSE)) %>%
@@ -267,14 +269,18 @@ data <- pltr %>%
                                     ifelse((c / lag(c)) > 0.98, 3, 
                                     ifelse((c / lag(c)) > 0.95, 2, 1)))))
 
+# generate contingency table
 table(data$cIncrease, data$vIncrease)
 ```
 
 Above we see a breakdown of change in closing price based on volitility increases (TRUE values) and when volitility decreases (FALSE values). There seems to be correlation between volitility increasing and more extreme price changes. Let us investigate further by printing out mean and standard deviations of each category.
 
 ```{r eda_pltr3}
+# feature engineering
 df <- data %>% group_by(order) %>% summarise(avg=mean(v), med=median(v), sd=sd(v))
 df$changeInPrice <- c('-5% or less', '-5% to -2%', '-2% to 2%', '2% to 5%', '5% or more', 'NA')
+
+# produce dataframe to view results in organized way
 df <- df %>% select(changeInPrice, avg, med, sd)
 df
 ```
@@ -287,6 +293,7 @@ FAANG stocks are known as Facebook (FB), Amazon (AMZN), Apple (AAPL), Netflix (N
 
 First, we need to retrieve data from API:
 ```{r eda_faang1}
+# retrieve data
 tickers <- c('AAPL', 'AMZN', 'GOOGL', 'FB', 'NFLX')
 tickerPricesWrapper <- function(ticker = '') {
   timespan <- 'day'
@@ -298,6 +305,7 @@ tickerPricesWrapper <- function(ticker = '') {
   return(prices)
 }
 
+# print out sample data
 prices <- lapply(tickers, tickerPricesWrapper) %>% bind_rows()
 head(prices, 10)
 ```
@@ -360,16 +368,18 @@ No correlation is uncovered between changes in volitility and changes in closing
 Let us explore differences between volitility in stock, forex, and crypto markets on October 4th, 2021.
 
 ```{r eda_market1}
+# wrapper function
 marketPricesAllVolWrapper <- function(market = 'stocks') {
   data <- marketPricesAll(market = market, date = '2021-10-04')
   data$m <- market
   return (data)
 }
 
+# retrieve data
 markets <- c('stocks', 'fx', 'crypto')
 marketVols <- lapply(markets, marketPricesAllVolWrapper) %>% bind_rows()
 
-
+# generate box plot
 marketBox <- ggplot(data = marketVols, mapping = aes(x = m, y = v, fill = m)) +
               geom_boxplot(show.legend = FALSE) +
               coord_cartesian(ylim = c(0, 10000000)) +
@@ -384,23 +394,33 @@ marketBox
 It appears that crypto has the largest volume of trades, followed by regular stock, and finally forex.
 
 
+Now let's create histograms for the number of assets in each market and their volitility:
 
+```{r eda_market2}
+# wrapper function
+marketPricesAllVolWrapper <- function(market = 'stocks') {
+  data <- marketPricesAll(market = market, date = '2021-10-04')
+  data$m <- market
+  return (data)
+}
 
+# retrieve data
+markets <- c('stocks', 'fx', 'crypto')
+marketVols <- lapply(markets, marketPricesAllVolWrapper) %>% bind_rows()
 
+# generate histogram
+marketHist <- marketVols %>%
+                  select(m, c, v) %>%
+                    group_by(m) %>%
+                      top_n(100, v) %>%
+                        ggplot(aes(x=c, fill=m)) + 
+                        geom_histogram(bins=10, show.legend = FALSE) +
+                        facet_wrap(~ m, scales = "free_x") +
+              theme(plot.title = element_text(hjust = 0.5, size=18, face="bold.italic")) +
+                    xlab('Cosing Price (USD') + 
+                    ylab('Count') + 
+                    labs(title = 'Closing Prices for Top 100 Most Volitile Assets \n For the October 4th, 2021 Session')
+marketHist
+```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+As seen above, each market's most volitile stocks tend to be the cheapest assets in that market.

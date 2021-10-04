@@ -307,8 +307,10 @@ create a categorical variable to indicate if closing price has
 increased/decreased since the previous trading day.
 
 ``` r
+# retreive data
 pltr <- tickerPrices(ticker=ticker, timespan=timespan, from=from, to=to)
 
+# feature engineering
 data <- pltr %>% 
           select(c, v) %>% 
             mutate(vIncrease = ifelse(v > lag(v), TRUE, FALSE)) %>%
@@ -322,6 +324,7 @@ data <- pltr %>%
                                     ifelse((c / lag(c)) > 0.98, 3, 
                                     ifelse((c / lag(c)) > 0.95, 2, 1)))))
 
+# generate contingency table
 table(data$cIncrease, data$vIncrease)
 ```
 
@@ -340,8 +343,11 @@ extreme price changes. Let us investigate further by printing out mean
 and standard deviations of each category.
 
 ``` r
+# feature engineering
 df <- data %>% group_by(order) %>% summarise(avg=mean(v), med=median(v), sd=sd(v))
 df$changeInPrice <- c('-5% or less', '-5% to -2%', '-2% to 2%', '2% to 5%', '5% or more', 'NA')
+
+# produce dataframe to view results in organized way
 df <- df %>% select(changeInPrice, avg, med, sd)
 df
 ```
@@ -372,6 +378,7 @@ these stocks.
 First, we need to retrieve data from API:
 
 ``` r
+# retrieve data
 tickers <- c('AAPL', 'AMZN', 'GOOGL', 'FB', 'NFLX')
 tickerPricesWrapper <- function(ticker = '') {
   timespan <- 'day'
@@ -383,32 +390,22 @@ tickerPricesWrapper <- function(ticker = '') {
   return(prices)
 }
 
+# print out sample data
 prices <- lapply(tickers, tickerPricesWrapper) %>% bind_rows()
 head(prices, 10)
 ```
 
-    ##            v       vw      o      c        h       l            t       n
-    ## 1  143285672 129.7326 133.52 129.41 133.6116 126.760 1.609736e+12 1310217
-    ## 2   97664898 130.7179 128.89 131.01 131.7400 128.430 1.609823e+12  707577
-    ## 3  155087970 128.3502 127.72 126.60 131.0499 126.382 1.609909e+12 1202574
-    ## 4  109578157 130.1539 128.36 130.92 131.6300 127.860 1.609996e+12  718357
-    ## 5  105158245 131.5657 132.43 132.05 132.6300 130.230 1.610082e+12  800069
-    ## 6  100617160 129.3232 129.19 128.98 130.1700 128.500 1.610341e+12  775027
-    ## 7   91851145 128.4834 128.50 128.80 129.6900 126.860 1.610428e+12  692719
-    ## 8   88636831 130.5588 128.76 130.89 131.4500 128.490 1.610514e+12  596230
-    ## 9   89671755 129.7381 130.80 128.91 131.0000 128.760 1.610600e+12  651392
-    ## 10 111196831 128.2640 128.78 127.14 130.2242 127.000 1.610687e+12  713312
-    ##    tick
-    ## 1  AAPL
-    ## 2  AAPL
-    ## 3  AAPL
-    ## 4  AAPL
-    ## 5  AAPL
-    ## 6  AAPL
-    ## 7  AAPL
-    ## 8  AAPL
-    ## 9  AAPL
-    ## 10 AAPL
+    ##            v       vw      o      c        h       l            t       n tick
+    ## 1  143285672 129.7326 133.52 129.41 133.6116 126.760 1.609736e+12 1310217 AAPL
+    ## 2   97664898 130.7179 128.89 131.01 131.7400 128.430 1.609823e+12  707577 AAPL
+    ## 3  155087970 128.3502 127.72 126.60 131.0499 126.382 1.609909e+12 1202574 AAPL
+    ## 4  109578157 130.1539 128.36 130.92 131.6300 127.860 1.609996e+12  718357 AAPL
+    ## 5  105158245 131.5657 132.43 132.05 132.6300 130.230 1.610082e+12  800069 AAPL
+    ## 6  100617160 129.3232 129.19 128.98 130.1700 128.500 1.610341e+12  775027 AAPL
+    ## 7   91851145 128.4834 128.50 128.80 129.6900 126.860 1.610428e+12  692719 AAPL
+    ## 8   88636831 130.5588 128.76 130.89 131.4500 128.490 1.610514e+12  596230 AAPL
+    ## 9   89671755 129.7381 130.80 128.91 131.0000 128.760 1.610600e+12  651392 AAPL
+    ## 10 111196831 128.2640 128.78 127.14 130.2242 127.000 1.610687e+12  713312 AAPL
 
 Next we will explore data using a series of plots:
 
@@ -477,16 +474,18 @@ Let us explore differences between volitility in stock, forex, and
 crypto markets on October 4th, 2021.
 
 ``` r
+# wrapper function
 marketPricesAllVolWrapper <- function(market = 'stocks') {
   data <- marketPricesAll(market = market, date = '2021-10-04')
   data$m <- market
   return (data)
 }
 
+# retrieve data
 markets <- c('stocks', 'fx', 'crypto')
 marketVols <- lapply(markets, marketPricesAllVolWrapper) %>% bind_rows()
 
-
+# generate box plot
 marketBox <- ggplot(data = marketVols, mapping = aes(x = m, y = v, fill = m)) +
               geom_boxplot(show.legend = FALSE) +
               coord_cartesian(ylim = c(0, 10000000)) +
@@ -503,3 +502,38 @@ marketBox
 
 It appears that crypto has the largest volume of trades, followed by
 regular stock, and finally forex.
+
+Now let’s create histograms for the number of assets in each market and
+their volitility:
+
+``` r
+# wrapper function
+marketPricesAllVolWrapper <- function(market = 'stocks') {
+  data <- marketPricesAll(market = market, date = '2021-10-04')
+  data$m <- market
+  return (data)
+}
+
+# retrieve data
+markets <- c('stocks', 'fx', 'crypto')
+marketVols <- lapply(markets, marketPricesAllVolWrapper) %>% bind_rows()
+
+# generate histogram
+marketHist <- marketVols %>%
+                  select(m, c, v) %>%
+                    group_by(m) %>%
+                      top_n(100, v) %>%
+                        ggplot(aes(x=c, fill=m)) + 
+                        geom_histogram(bins=10, show.legend = FALSE) +
+                        facet_wrap(~ m, scales = "free_x") +
+              theme(plot.title = element_text(hjust = 0.5, size=18, face="bold.italic")) +
+                    xlab('Cosing Price (USD') + 
+                    ylab('Count') + 
+                    labs(title = 'Closing Prices for Top 100 Most Volitile Assets \n For the October 4th, 2021 Session')
+marketHist
+```
+
+![](index_files/figure-gfm/eda_market2-1.png)<!-- -->
+
+As seen above, each market’s most volitile stocks tend to be the
+cheapest assets in that market.
